@@ -78,7 +78,7 @@ def fetch_season_matches(
             return json.load(f)
 
     url = f"{API_BASE}/competitions/{competition}/matches"
-    headers = {"X-Auth-Token": token}
+    headers = {"X-Auth-Token": token.strip()}
     params = {"season": season}
 
     for attempt in range(3):
@@ -439,6 +439,9 @@ def main():
     parser.add_argument("--cache-dir", type=str, default="cache")
     parser.add_argument("--force-refresh", action="store_true", help="Ignore le cache et re-interroge l'API")
     args = parser.parse_args()
+
+    if args.token:
+        args.token = args.token.strip()
 
     if not args.token:
         print("❌ Aucun token API. Definis FOOTBALL_API_TOKEN ou passe --token TON_TOKEN")

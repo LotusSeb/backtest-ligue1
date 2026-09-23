@@ -209,6 +209,20 @@ def predict_poisson(
     }
 
 
+def shrink_form(form: TeamForm, league_avg: float, k: float = 8.0) -> TeamForm:
+    """Retrecissement bayesien : tire l'estimation d'une equipe vers la moyenne
+    de la ligue proportionnellement au manque d'historique disponible.
+
+    k represente un nombre de "matchs virtuels" a la moyenne de la ligue.
+    Plus n_matches est petit face a k, plus l'estimation est tiree vers league_avg.
+    Quand n_matches >> k, la forme reelle de l'equipe domine (peu de changement).
+    """
+    n = form.n_matches
+    shrunk_scored = (n * form.avg_scored + k * league_avg) / (n + k)
+    shrunk_conceded = (n * form.avg_conceded + k * league_avg) / (n + k)
+    return TeamForm(avg_scored=shrunk_scored, avg_conceded=shrunk_conceded, n_matches=n)
+
+
 def predict_baseline_11(form_h: TeamForm, form_a: TeamForm, league_avg: float) -> dict:
     return {"home_goals": 1, "away_goals": 1, "probs": None}
 
@@ -218,12 +232,29 @@ def predict_baseline_prior(form_h: TeamForm, form_a: TeamForm, league_avg: float
     return {"home_goals": None, "away_goals": None, "probs": dict(PRIOR_PROBS)}
 
 
-MODELS: Dict[str, Callable] = {
-    "algo_actuel": predict_current_algo,
-    "poisson": predict_poisson,
-    "baseline_1-1": predict_baseline_11,
-    "baseline_prior": predict_baseline_prior,
-}
+def build_models(home_advantage: float = 1.15, shrink_k: float = 8.0) -> Dict[str, Callable]:
+    """Construit le dictionnaire des modeles a comparer, parametre par CLI."""
+
+    def _poisson(fh, fa, la):
+        return predict_poisson(fh, fa, la, home_advantage=home_advantage)
+
+    def _poisson_shrink(fh, fa, la):
+        fh_s = shrink_form(fh, la, k=shrink_k)
+        fa_s = shrink_form(fa, la, k=shrink_k)
+        return predict_poisson(fh_s, fa_s, la, home_advantage=home_advantage)
+
+    return {
+        "algo_actuel": predict_current_algo,
+        "poisson": _poisson,
+        "poisson_shrink": _poisson_shrink,
+        "baseline_1-1": predict_baseline_11,
+        "baseline_prior": predict_baseline_prior,
+    }
+
+
+# Dictionnaire par defaut (retro-compatibilite / tests) ; main() en construit
+# un nouveau a partir des arguments CLI (--home-advantage, --shrink-k).
+MODELS: Dict[str, Callable] = build_models()
 
 
 # --------------------------------------------------------------------------- #
@@ -259,8 +290,10 @@ def run_backtest(
     home_advantage: float,
     cache_dir: Path,
     verbose: bool = True,
+    models: Optional[Dict[str, Callable]] = None,
 ) -> List[dict]:
     rows = []
+    models = models or MODELS
 
     for season in seasons:
         print(f"\n📥 Saison {season}...")
@@ -286,7 +319,7 @@ def run_backtest(
 
                 actual_result = result_from_score(actual_h, actual_a)
 
-                for model_name, model_fn in MODELS.items():
+                for model_name, model_fn in models.items():
                     pred = model_fn(form_h, form_a, league_avg)
                     row = {
                         "season": season,
@@ -435,6 +468,13 @@ def main():
     parser.add_argument("--n-history", type=int, default=5, help="Fenetre de matchs recents utilisee (defaut: 5)")
     parser.add_argument("--min-history", type=int, default=3, help="Nb minimum de matchs avant de predire (defaut: 3)")
     parser.add_argument("--home-advantage", type=float, default=1.15, help="Facteur avantage domicile pour Poisson")
+    parser.add_argument(
+        "--shrink-k",
+        type=float,
+        default=8.0,
+        help="Force du retrecissement bayesien vers la moyenne de la ligue pour poisson_shrink "
+        "(en 'matchs virtuels' ; plus haut = plus prudent). Defaut: 8.0",
+    )
     parser.add_argument("--out-dir", type=str, default="backtest_output")
     parser.add_argument("--cache-dir", type=str, default="cache")
     parser.add_argument("--force-refresh", action="store_true", help="Ignore le cache et re-interroge l'API")
@@ -455,6 +495,8 @@ def main():
             if f.exists():
                 f.unlink()
 
+    models = build_models(home_advantage=args.home_advantage, shrink_k=args.shrink_k)
+
     rows = run_backtest(
         seasons=args.seasons,
         token=args.token,
@@ -462,6 +504,7 @@ def main():
         min_history=args.min_history,
         home_advantage=args.home_advantage,
         cache_dir=Path(args.cache_dir),
+        models=models,
     )
 
     if not rows:

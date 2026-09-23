@@ -16,6 +16,7 @@ match, puis compare aux résultats réels.
 |---|---|
 | `algo_actuel` | Formule simple attaque/défense (moyenne des 5 derniers matchs, arrondie) |
 | `poisson` | Modèle de Poisson attaque/défense, calibré sur la moyenne de buts en cours de saison, avec avantage du terrain |
+| `poisson_shrink` | Comme `poisson`, mais avec rétrécissement bayésien : les estimations d'équipes ayant peu d'historique sont tirées vers la moyenne de la ligue, pour éviter des probabilités trop confiantes |
 | `baseline_1-1` | Prédit toujours 1-1 (référence triviale) |
 | `baseline_prior` | Probabilités 1N2 fixes (~45 % dom. / 27 % nul / 28 % ext.), sert de référence pour le Brier score / log-loss |
 
@@ -52,6 +53,7 @@ Options utiles :
 | `--n-history` | 5 | Nombre de matchs récents utilisés pour la forme |
 | `--min-history` | 3 | Nombre minimum de matchs avant de commencer à prédire |
 | `--home-advantage` | 1.15 | Facteur d'avantage du terrain (modèle Poisson) |
+| `--shrink-k` | 8.0 | Force du rétrécissement bayésien pour `poisson_shrink` (en "matchs virtuels" ; plus haut = plus prudent) |
 | `--out-dir` | `backtest_output` | Dossier de sortie des résultats |
 | `--cache-dir` | `cache` | Dossier de cache des données API (JSON par saison) |
 | `--force-refresh` | — | Ignore le cache et réinterroge l'API |

@@ -61,6 +61,47 @@ def test_predict_current_algo_matches_original_formula():
     print("✅ predict_current_algo reproduit bien la formule originale")
 
 
+def test_shrink_form_pulls_toward_league_average_when_small_sample():
+    # Petit historique (2 matchs) tres au-dessus de la moyenne de la ligue
+    raw = bt.TeamForm(avg_scored=4.0, avg_conceded=0.0, n_matches=2)
+    league_avg = 1.3
+    shrunk = bt.shrink_form(raw, league_avg, k=8.0)
+    # Le resultat retrecis doit etre entre la valeur brute et la moyenne de la ligue,
+    # et plus proche de la moyenne de la ligue vu le faible echantillon (n=2 << k=8)
+    assert league_avg < shrunk.avg_scored < raw.avg_scored
+    assert raw.avg_conceded < shrunk.avg_conceded < league_avg
+    print(f"✅ shrink_form OK (avg_scored brut={raw.avg_scored} -> retreci={shrunk.avg_scored:.2f}, moyenne ligue={league_avg})")
+
+
+def test_shrink_form_has_little_effect_with_large_sample():
+    # Avec beaucoup de matchs (n=100 >> k=8), le retrecissement doit etre quasi nul
+    raw = bt.TeamForm(avg_scored=2.0, avg_conceded=0.8, n_matches=100)
+    shrunk = bt.shrink_form(raw, league_avg=1.3, k=8.0)
+    assert abs(shrunk.avg_scored - raw.avg_scored) < 0.1
+    print("✅ shrink_form a bien un effet negligeable avec un grand echantillon")
+
+
+def test_poisson_shrink_is_less_extreme_than_poisson_on_small_sample():
+    # Meme scenario "petit historique extreme" pour les deux equipes
+    form_h = bt.TeamForm(avg_scored=4.0, avg_conceded=0.0, n_matches=2)
+    form_a = bt.TeamForm(avg_scored=0.0, avg_conceded=4.0, n_matches=2)
+    league_avg = 1.3
+
+    raw_pred = bt.predict_poisson(form_h, form_a, league_avg)
+
+    fh_shrunk = bt.shrink_form(form_h, league_avg, k=8.0)
+    fa_shrunk = bt.shrink_form(form_a, league_avg, k=8.0)
+    shrunk_pred = bt.predict_poisson(fh_shrunk, fa_shrunk, league_avg)
+
+    # Le modele retreci doit etre moins categorique (probabilite de victoire domicile
+    # plus proche de 0.5 / moins extreme) que le modele brut sur-confiant
+    assert shrunk_pred["probs"]["H"] < raw_pred["probs"]["H"]
+    print(
+        f"✅ poisson_shrink moins extreme que poisson brut "
+        f"(P(H) brut={raw_pred['probs']['H']:.3f} vs retreci={shrunk_pred['probs']['H']:.3f})"
+    )
+
+
 def test_predict_poisson_shapes():
     form_h = bt.TeamForm(avg_scored=2.0, avg_conceded=0.8, n_matches=5)
     form_a = bt.TeamForm(avg_scored=0.9, avg_conceded=1.5, n_matches=5)
@@ -119,12 +160,12 @@ def test_full_backtest_loop_with_mocked_api():
         if model in ("algo_actuel", "baseline_1-1"):
             assert s["exact_score_acc"] is not None
             assert s["brier_score"] is None  # ces modeles ne donnent pas de probas
-        if model in ("poisson", "baseline_prior"):
+        if model in ("poisson", "poisson_shrink", "baseline_prior"):
             assert s["brier_score"] is not None
             assert 0 <= s["brier_score"] <= 2  # brier max possible = 2
 
     table = bt.format_summary_table(summary)
-    assert "algo_actuel" in table and "poisson" in table
+    assert "algo_actuel" in table and "poisson" in table and "poisson_shrink" in table
     print("\n" + table)
     print("\n✅ Boucle complete de backtest (avec API mockee) OK")
 
@@ -133,6 +174,9 @@ if __name__ == "__main__":
     test_compute_form()
     test_compute_form_empty()
     test_predict_current_algo_matches_original_formula()
+    test_shrink_form_pulls_toward_league_average_when_small_sample()
+    test_shrink_form_has_little_effect_with_large_sample()
+    test_poisson_shrink_is_less_extreme_than_poisson_on_small_sample()
     test_predict_poisson_shapes()
     test_metrics()
     test_full_backtest_loop_with_mocked_api()

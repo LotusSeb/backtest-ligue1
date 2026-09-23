@@ -53,7 +53,7 @@ Options utiles :
 | `--n-history` | 5 | Nombre de matchs récents utilisés pour la forme |
 | `--min-history` | 3 | Nombre minimum de matchs avant de commencer à prédire |
 | `--home-advantage` | 1.15 | Facteur d'avantage du terrain (modèle Poisson) |
-| `--shrink-k` | 8.0 | Force du rétrécissement bayésien pour `poisson_shrink` (en "matchs virtuels" ; plus haut = plus prudent) |
+| `--shrink-k` | 8.0 | Force du rétrécissement bayésien pour `poisson_shrink`. Accepte plusieurs valeurs pour lancer un balayage, ex: `--shrink-k 2 4 8 16` (crée alors `poisson_shrink_k2`, `poisson_shrink_k4`, etc.) |
 | `--out-dir` | `backtest_output` | Dossier de sortie des résultats |
 | `--cache-dir` | `cache` | Dossier de cache des données API (JSON par saison) |
 | `--force-refresh` | — | Ignore le cache et réinterroge l'API |

@@ -232,24 +232,43 @@ def predict_baseline_prior(form_h: TeamForm, form_a: TeamForm, league_avg: float
     return {"home_goals": None, "away_goals": None, "probs": dict(PRIOR_PROBS)}
 
 
-def build_models(home_advantage: float = 1.15, shrink_k: float = 8.0) -> Dict[str, Callable]:
-    """Construit le dictionnaire des modeles a comparer, parametre par CLI."""
+def _format_k(k: float) -> str:
+    return f"{k:g}"
+
+
+def build_models(home_advantage: float = 1.15, shrink_ks: Tuple[float, ...] = (8.0,)) -> Dict[str, Callable]:
+    """Construit le dictionnaire des modeles a comparer, parametre par CLI.
+
+    shrink_ks : une ou plusieurs valeurs de force de retrecissement a tester.
+    Avec une seule valeur (comportement par defaut), le modele s'appelle
+    "poisson_shrink". Avec plusieurs valeurs (balayage), chaque variante est
+    nommee "poisson_shrink_k{valeur}" pour comparer objectivement le dosage.
+    """
 
     def _poisson(fh, fa, la):
         return predict_poisson(fh, fa, la, home_advantage=home_advantage)
 
-    def _poisson_shrink(fh, fa, la):
-        fh_s = shrink_form(fh, la, k=shrink_k)
-        fa_s = shrink_form(fa, la, k=shrink_k)
-        return predict_poisson(fh_s, fa_s, la, home_advantage=home_advantage)
+    def _make_poisson_shrink(k: float):
+        def _fn(fh, fa, la):
+            fh_s = shrink_form(fh, la, k=k)
+            fa_s = shrink_form(fa, la, k=k)
+            return predict_poisson(fh_s, fa_s, la, home_advantage=home_advantage)
 
-    return {
+        return _fn
+
+    models: Dict[str, Callable] = {
         "algo_actuel": predict_current_algo,
         "poisson": _poisson,
-        "poisson_shrink": _poisson_shrink,
         "baseline_1-1": predict_baseline_11,
         "baseline_prior": predict_baseline_prior,
     }
+
+    single = len(shrink_ks) == 1
+    for k in shrink_ks:
+        name = "poisson_shrink" if single else f"poisson_shrink_k{_format_k(k)}"
+        models[name] = _make_poisson_shrink(k)
+
+    return models
 
 
 # Dictionnaire par defaut (retro-compatibilite / tests) ; main() en construit
@@ -471,9 +490,12 @@ def main():
     parser.add_argument(
         "--shrink-k",
         type=float,
-        default=8.0,
-        help="Force du retrecissement bayesien vers la moyenne de la ligue pour poisson_shrink "
-        "(en 'matchs virtuels' ; plus haut = plus prudent). Defaut: 8.0",
+        nargs="+",
+        default=[8.0],
+        help="Force(s) du retrecissement bayesien vers la moyenne de la ligue pour poisson_shrink "
+        "(en 'matchs virtuels' ; plus haut = plus prudent). Une seule valeur -> modele 'poisson_shrink'. "
+        "Plusieurs valeurs -> balayage, un modele 'poisson_shrink_kX' par valeur. "
+        "Ex: --shrink-k 2 4 8 16. Defaut: 8.0",
     )
     parser.add_argument("--out-dir", type=str, default="backtest_output")
     parser.add_argument("--cache-dir", type=str, default="cache")
@@ -495,7 +517,7 @@ def main():
             if f.exists():
                 f.unlink()
 
-    models = build_models(home_advantage=args.home_advantage, shrink_k=args.shrink_k)
+    models = build_models(home_advantage=args.home_advantage, shrink_ks=tuple(args.shrink_k))
 
     rows = run_backtest(
         seasons=args.seasons,

@@ -1,0 +1,14 @@
+# Cache des donnees API (regenere automatiquement)
+cache/
+
+# Resultats de backtest (regeneres a chaque run)
+backtest_output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Ne jamais commiter ta cle API
+.env
